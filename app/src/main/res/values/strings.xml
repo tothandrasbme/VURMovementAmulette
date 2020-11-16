@@ -17,6 +17,8 @@
     <string name="label_datastorage">Data Storage</string>
     <string name="textoff_savedata">Save Data</string>
     <string name="texton_savedata">Stop Saving</string>
+    <string name="textoff_DirectionData">External sensor</string>
+    <string name="texton_DirectionData">Internal Sensor</string>
 
     <string name="label_audioout">Audio Out</string>
     <string name="textoff_audioout">Enable Audio</string>

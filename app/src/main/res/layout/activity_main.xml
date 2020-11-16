@@ -140,6 +140,15 @@
             android:textOn="@string/texton_savedata"
             android:layout_below="@id/tvDataStorage"/>
 
+        <ToggleButton
+            android:id="@+id/tbDirectionData"
+            android:layout_width="fill_parent"
+            android:layout_height="50dp"
+            android:checked="false"
+            android:textOff="@string/textoff_DirectionData"
+            android:textOn="@string/texton_DirectionData"
+            android:layout_below="@id/tbSaveData"/>
+
         <TableLayout
             android:id="@+id/tlADCChannels"
             android:layout_width="match_parent"

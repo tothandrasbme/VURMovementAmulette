@@ -3,12 +3,18 @@ package com.dairyroadsolutions.accelplot;
 import static java.lang.Math.pow;
 
 import android.app.Activity;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorManager;
+import android.hardware.SensorEventListener;
 import android.net.Uri;
 import android.opengl.GLSurfaceView;
 import android.os.Bundle;
@@ -16,6 +22,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.text.InputFilter;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.Menu;
 import android.view.View;
@@ -32,10 +39,33 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.ToggleButton;
+
+//import org.w3c.dom.Node;
+import com.google.android.gms.tasks.Task;
+import com.google.android.gms.tasks.Tasks;
+import com.google.android.gms.wearable.CapabilityClient;
+import com.google.android.gms.wearable.CapabilityInfo;
+import com.google.android.gms.wearable.DataClient;
+import com.google.android.gms.wearable.DataEvent;
+import com.google.android.gms.wearable.DataEventBuffer;
+import com.google.android.gms.wearable.MessageClient;
+import com.google.android.gms.wearable.MessageEvent;
+import com.google.android.gms.wearable.Node;
+import com.google.android.gms.wearable.Wearable;
+
+
+import java.io.Console;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
-public class MainActivity extends Activity {
+import androidx.annotation.WorkerThread;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+
+public class MainActivity extends Activity implements DataClient.OnDataChangedListener,
+        MessageClient.OnMessageReceivedListener,
+        CapabilityClient.OnCapabilityChangedListener{
 
     private static final int TRACE_COUNT = 12;
     private static final int CHART_COLUMN_COUNT = 1;
@@ -73,6 +103,7 @@ public class MainActivity extends Activity {
     private ToggleButton _tbStream;
     private TextView _tvDataStorage;
     private ToggleButton _tbSaveData;
+    private ToggleButton _tbDirectionData;
     private TextView _tvAudioOut;
     private ToggleButton _tbAudioOut;
     private TextView _tvCh1;
@@ -85,6 +116,80 @@ public class MainActivity extends Activity {
     private Spinner _spAccRange;
     private TextView _tvFile;
     private EditText _etFileSamples;
+
+    private SensorManager sensorManager;
+    private Sensor accelSensor;
+    private Sensor gyroSensor;
+    private float lastX, lastY, lastZ;
+
+    private float deltaX = 0;
+    private float deltaY = 0;
+    private float deltaZ = 0;
+    private static double dSampleFreq = 250.0;
+
+    public static int iFileSampleCount = (int) dSampleFreq * 60;
+    public static float[] fX_Acce_internal = new float[iFileSampleCount];
+    public static float[] fY_Acce_internal = new float[iFileSampleCount];
+    public static float[] fZ_Acce_internal = new float[iFileSampleCount];
+
+    public static float[] fX_Acce_watch = new float[iFileSampleCount];
+    public static float[] fY_Acce_watch = new float[iFileSampleCount];
+    public static float[] fZ_Acce_watch = new float[iFileSampleCount];
+
+    public static float x_current_Acce_watch = 0.0f;
+    public static float y_current_Acce_watch = 0.0f;
+    public static float z_current_Acce_watch = 0.0f;
+
+    //This channel can be a gyro or the ADC, depending how how the firmware is configured
+    //in the Arduino
+    public static float[] fX_Gyro_internal = new float[iFileSampleCount];
+    public static float[] fY_Gyro_internal = new float[iFileSampleCount];
+    public static float[] fZ_Gyro_internal = new float[iFileSampleCount];
+
+    public static float[] fX_Gyro = new float[iFileSampleCount];
+    public static float[] fY_Gyro = new float[iFileSampleCount];
+    public static float[] fZ_Gyro = new float[iFileSampleCount];
+
+    public static float[] fX_Accel2 = new float[iFileSampleCount];
+    public static float[] fY_Accel2 = new float[iFileSampleCount];
+    public static float[] fZ_Accel2 = new float[iFileSampleCount];
+
+    //This channel can be a gyro or the ADC, depending how how the firmware is configured
+    //in the Arduino
+    public static float[] fX_Gyro2 = new float[iFileSampleCount];
+    public static float[] fY_Gyro2 = new float[iFileSampleCount];
+    public static float[] fZ_Gyro2 = new float[iFileSampleCount];
+
+    public static int idxBuff = 0;
+    int receivedMessageNumber = 1;
+    int sentMessageNumber = 1;
+    protected Handler myHandler;
+    public static final String SEND_ACCELERATION_DATA_MESSAGE_PATH = "/acceleration_dataexploration";
+
+    //Define a nested class that extends BroadcastReceiver//
+
+    public class Receiver extends BroadcastReceiver {
+        @Override
+
+        public void onReceive(Context context, Intent intent) {
+
+            //Upon receiving each message from the wearable, display the following text//
+
+            String message = "I just received a message from the wearable " + receivedMessageNumber++;;
+
+            //myLabel.append(message + "\r\n");
+
+        }
+    }
+
+    public void sendmessage(String messageText) {
+        Bundle bundle = new Bundle();
+        bundle.putString("messageText", messageText);
+        Message msg = myHandler.obtainMessage();
+        msg.setData(bundle);
+        myHandler.sendMessage(msg);
+
+    }
 
     private FilterHelper filter = new FilterHelper();
 
@@ -151,6 +256,7 @@ public class MainActivity extends Activity {
         sockServer.classChartRenderer.setChOffset(fChOffset);
 
     }
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -225,6 +331,16 @@ public class MainActivity extends Activity {
         _tbSaveData = (ToggleButton)findViewById(R.id.tbSaveData);
         _tbSaveData.setEnabled(true);
         _tbSaveData.setVisibility(View.VISIBLE);
+
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+
+
+        // Flags for the data direction button
+        _tbDirectionData = (ToggleButton)findViewById(R.id.tbDirectionData);
+        _tbDirectionData.setEnabled(true);
+        _tbDirectionData.setVisibility(View.VISIBLE);
 
         _tvDataStorage = (TextView)findViewById(R.id.tvDataStorage);
         _tvDataStorage.setVisibility(View.VISIBLE);
@@ -327,8 +443,259 @@ public class MainActivity extends Activity {
         //Bluetooth.samplesBuffer[0].TestHarness();
         sockServer.samplesBuffer[0].TestHarness();
 
+
+        myHandler = new Handler(new Handler.Callback() {
+            @Override
+            public boolean handleMessage(Message msg) {
+                Bundle stuff = msg.getData();
+                messageText(stuff.getString("messageText"));
+                return true;
+            }
+        });
+
+
+        //Register to receive local broadcasts, which we'll be creating in the next step//
+
+        IntentFilter messageFilter = new IntentFilter(Intent.ACTION_SEND);
+        Receiver messageReceiver = new Receiver();
+        LocalBroadcastManager.getInstance(this).registerReceiver(messageReceiver, messageFilter);
+
     }
 
+    @Override
+    public void onResume() {
+        super.onResume();
+
+        // Instantiates clients without member variables, as clients are inexpensive to create and
+        // won't lose their listeners. (They are cached and shared between GoogleApi instances.)
+        Wearable.getDataClient(this).addListener(this);
+        Wearable.getMessageClient(this).addListener(this);
+        Wearable.getCapabilityClient(this)
+                .addListener(this, Uri.parse("wear://"), CapabilityClient.FILTER_REACHABLE);
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+
+        Wearable.getDataClient(this).removeListener(this);
+        Wearable.getMessageClient(this).removeListener(this);
+        Wearable.getCapabilityClient(this).removeListener(this);
+    }
+
+    @Override
+    public void onDataChanged(DataEventBuffer dataEvents) {
+        Log.d("Main: ", "onDataChanged: " + dataEvents);
+
+        for (DataEvent event : dataEvents) {
+            if (event.getType() == DataEvent.TYPE_CHANGED) {
+                Log.d("Main: ", "DataItem Changed" + event.getDataItem().toString());
+            } else if (event.getType() == DataEvent.TYPE_DELETED) {
+                Log.d("Main: ", "DataItem Changed" + event.getDataItem().toString());
+            }
+        }
+    }
+
+    @Override
+    public void onMessageReceived(MessageEvent messageEvent) {
+        Log.d(
+                "Main: ",
+                "onMessageReceived() A message from watch was received:"
+                        + messageEvent.getRequestId()
+                        + " "
+                        + messageEvent.getPath());
+
+        String messageContent = new String(messageEvent.getData(), StandardCharsets.UTF_8);
+
+        Log.d("Main: ", "Message from watch" + messageContent);
+        // Process acceleration value from the watch
+
+        String[] accelDatas = messageContent.substring(1,messageContent.length()-2).split(",");
+
+        x_current_Acce_watch = (float)((float) (Float.parseFloat(accelDatas[0])) * 500 + 4000);
+
+        y_current_Acce_watch = (float)((float) (Float.parseFloat(accelDatas[1])) * 500 + 4000);
+
+        z_current_Acce_watch = (float)((float) (Float.parseFloat(accelDatas[2])) * 500 + 4000);
+
+
+
+        /*dataPayload = "[" + Float.toString(event.values[0]) +
+                        "," + Float.toString(event.values[1]) +
+                        "," + Float.toString(event.values[2]) + "]";*/
+
+        /*Log.d("Main: ","Acceleration internal raw: " + event.values[0] + "   ,"  + event.values[1] + "   ,"  + event.values[2] + "Acceleration changes: " + deltaX + "   ,"  + deltaY + "   ,"  + deltaZ );
+
+            // get the change of the x,y,z values of the accelerometer
+            deltaX = Math.abs(lastX - event.values[0]);
+            deltaY = Math.abs(lastY - event.values[1]);
+            deltaZ = Math.abs(lastZ - event.values[2]);
+
+
+            // if the change is below 2, it is just plain noise
+            if (deltaX < 2)
+                deltaX = 0;
+            if (deltaY < 2)
+                deltaY = 0;
+            if (deltaZ < 2)
+                deltaZ = 0;
+
+            // set the last know values of x,y,z
+            lastX = event.values[0];
+            lastY = event.values[1];
+            lastZ = event.values[2];
+
+            fX_Acce_internal[idxBuff] = (float)((float) (event.values[0]) * 500 + 4000);
+
+            fY_Acce_internal[idxBuff] = (float)((float) (event.values[1]) * 500 + 4000);
+
+            fZ_Acce_internal[idxBuff] = (float)((float) (event.values[2]) * 500 + 4000);
+*/
+
+    }
+
+    @Override
+    public void onCapabilityChanged(final CapabilityInfo capabilityInfo) {
+        Log.d("Main: ", "onCapabilityChanged: " + capabilityInfo);
+    }
+
+    @WorkerThread
+    private void sendStartActivityMessage(String node) {
+
+        Task<Integer> sendMessageTask =
+                Wearable.getMessageClient(this).sendMessage(node, SEND_ACCELERATION_DATA_MESSAGE_PATH, new byte[0]);
+
+        try {
+            // Block on a task and get the result synchronously (because this is on a background
+            // thread).
+            Integer result = Tasks.await(sendMessageTask);
+            Log.d("Main: ", "Message sent: " + result);
+
+        } catch (ExecutionException exception) {
+            Log.e("Main: ", "Task failed: " + exception);
+
+        } catch (InterruptedException exception) {
+            Log.e("Main: ", "Interrupt occurred: " + exception);
+        }
+    }
+
+    class SendMessage extends Thread {
+        String path;
+        String message;
+
+//Constructor for sending information to the Data Layer//
+
+        SendMessage() {
+        }
+
+        public void run() {
+
+//Retrieve the connected devices//
+
+            Task<List<Node>> nodeListTask =
+                    Wearable.getNodeClient(getApplicationContext()).getConnectedNodes();
+            try {
+
+//Block on a task and get the result synchronously//
+
+                List<Node> nodes = Tasks.await(nodeListTask);
+                for (Node node : nodes) {
+
+                    sendStartActivityMessage(node.getId());
+
+                }
+
+            } catch (ExecutionException exception) {
+
+            } catch (InterruptedException exception) {
+
+            }
+        }
+    }
+
+
+    private SensorEventListener mSensorListener = new SensorEventListener() {
+
+        private static final float F_OFFSET_COUNT = 4095.0f;
+
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            Log.d("Main: ","Acceleration internal raw: " + event.values[0] + "   ,"  + event.values[1] + "   ,"  + event.values[2] + "Acceleration changes: " + deltaX + "   ,"  + deltaY + "   ,"  + deltaZ );
+
+            // get the change of the x,y,z values of the accelerometer
+            deltaX = Math.abs(lastX - event.values[0]);
+            deltaY = Math.abs(lastY - event.values[1]);
+            deltaZ = Math.abs(lastZ - event.values[2]);
+
+
+            // if the change is below 2, it is just plain noise
+            if (deltaX < 2)
+                deltaX = 0;
+            if (deltaY < 2)
+                deltaY = 0;
+            if (deltaZ < 2)
+                deltaZ = 0;
+
+            // set the last know values of x,y,z
+            lastX = event.values[0];
+            lastY = event.values[1];
+            lastZ = event.values[2];
+
+            fX_Acce_internal[idxBuff] = (float)((float) (event.values[0]) * 500 + 4000);
+
+            fY_Acce_internal[idxBuff] = (float)((float) (event.values[1]) * 500 + 4000);
+
+            fZ_Acce_internal[idxBuff] = (float)((float) (event.values[2]) * 500 + 4000);
+
+            fX_Acce_watch[idxBuff] = x_current_Acce_watch;
+
+            fY_Acce_watch[idxBuff] = y_current_Acce_watch;
+
+            fZ_Acce_watch[idxBuff] = z_current_Acce_watch;
+
+
+
+            sockServer.classChartRenderer.classChart
+                    .addSample(fX_Acce_internal[idxBuff] - F_OFFSET_COUNT, 0);
+            sockServer.classChartRenderer.classChart
+                    .addSample(fY_Acce_internal[idxBuff] - F_OFFSET_COUNT, 1);
+            sockServer.classChartRenderer.classChart
+                    .addSample(fZ_Acce_internal[idxBuff] - F_OFFSET_COUNT, 2);
+
+            sockServer.classChartRenderer.classChart
+                    .addSample(0.0f, 3);
+            sockServer.classChartRenderer.classChart
+                    .addSample(0.0f, 4);
+            sockServer.classChartRenderer.classChart
+                    .addSample(0.0f, 5);
+
+            sockServer.classChartRenderer.classChart
+                    .addSample(fX_Acce_watch[idxBuff], 6);
+            sockServer.classChartRenderer.classChart
+                    .addSample(fY_Acce_watch[idxBuff], 7);
+            sockServer.classChartRenderer.classChart
+                    .addSample(fZ_Acce_watch[idxBuff], 8);
+
+            Log.d("Main: ","Acceleration watch: " + fX_Acce_watch[idxBuff] + "   ,"  + fY_Acce_watch[idxBuff] + "   ,"  + fZ_Acce_watch[idxBuff]);
+
+
+            /*
+            sockServer.classChartRenderer.classChart
+                    .addSample(0.0f, 9);
+            sockServer.classChartRenderer.classChart
+                    .addSample(0.0f, 10);
+            sockServer.classChartRenderer.classChart
+                    .addSample(0.0f, 11);*/
+
+            // Increment the data buffer index
+            idxBuff = ++idxBuff % iFileSampleCount;
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int accuracy) {
+            Log.d("MY_APP", sensor.toString() + " - " + accuracy);
+        }
+    };
 
     /**
      * Pass the message handler to the Bluetooth class
@@ -337,6 +704,13 @@ public class MainActivity extends Activity {
 
         //Bluetooth.gethandler(mUpdateHandler);
         sockServer.initServer();
+    }
+
+    public void messageText(String newinfo) {
+        if (newinfo.compareTo("") != 0) {
+            //myLabel.append("\n Wearable sent :" + newinfo);
+
+        }
     }
 
 
@@ -728,7 +1102,28 @@ public class MainActivity extends Activity {
         _tbSaveData.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                vUpdateSaveData();
+                /// TEST // vUpdateSaveData();
+                new SendMessage().start();
+                Log.d("Main: ", "Send to Wearable - TEST Message ");
+            }
+        });
+
+        // Configure the direction data button
+        _tbDirectionData = (ToggleButton)findViewById(R.id.tbDirectionData);
+        _tbDirectionData.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if(_tbDirectionData.isChecked()) {      // Internal Sensor
+                    Toast.makeText(getApplicationContext(), "Internal sensor start reading",Toast.LENGTH_SHORT);
+
+                    sensorManager.registerListener(mSensorListener,accelSensor,SensorManager.SENSOR_DELAY_NORMAL);
+
+                    Log.d("Main:","Internal sensor will be used now.");
+                    List<Sensor> deviceSensors = sensorManager.getSensorList(Sensor.TYPE_ALL);
+                    Log.d("Main:","Sensors: " + deviceSensors.toString());
+                } else {
+                    sensorManager.unregisterListener(mSensorListener);
+                }
             }
         });
 
