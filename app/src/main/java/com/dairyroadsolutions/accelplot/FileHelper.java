@@ -6,10 +6,15 @@ package com.dairyroadsolutions.accelplot;
  * This helper provides methods to write data to the sd card on the device.
  */
 
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.text.DateFormat;
+import java.util.Date;
 
 import android.os.Build;
 import android.os.Environment;
@@ -23,6 +28,9 @@ class FileHelper {
         vSetSamples( iFloatBuffLength );
     }
 
+    private File logFile = null;
+    private File logDir = null;
+
     // debug
     private static final String _strTag = MainActivity.class.getSimpleName();
 
@@ -33,6 +41,57 @@ class FileHelper {
         bb = ByteBuffer.allocate(iFloatBuffLength*4);
     }
 
+
+    public boolean logAccData(String source, float data1, float data2, float data3){
+
+        String strDir = "Amulette_Log";
+
+        if(logFile == null) {
+            File sdCard;
+
+            String currentDateTimeString = DateFormat.getDateTimeInstance().format(new Date());
+
+            if(Build.VERSION.SDK_INT > Build.VERSION_CODES.JELLY_BEAN_MR2){
+                sdCard = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
+            }else{
+                sdCard = Environment.getExternalStorageDirectory();
+            }
+
+            logDir = new File(sdCard.getAbsolutePath() + strDir);
+            logFile = new File(logDir, currentDateTimeString + "log.txt");
+        }
+
+        appenLogToSD(source,data1,data2,data3);
+
+        return true;
+    }
+
+    /**
+     * This function writes one single data into the logfile
+     * directory and file name values;
+     */
+    public boolean appenLogToSD(String source, float data1, float data2, float data3){
+
+        if(logFile != null) {
+
+
+            try {
+                String currentDateTimeString = DateFormat.getDateTimeInstance().format(new Date());
+
+                BufferedWriter buf = new BufferedWriter(new FileWriter(logFile, true));
+                buf.append(currentDateTimeString + "-" + "[DATA1;"+ source + ";" + data1 + ";" + data2 + ";" + data3 + "]");
+                buf.newLine();
+                buf.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            return true;
+        } else {
+            Log.d("Main: ", "Log file is null we are not able to open it");
+            return false;
+        }
+    }
 
 
     /**
@@ -52,6 +111,7 @@ class FileHelper {
         }else{
             sdCard = Environment.getExternalStorageDirectory();
         }
+
         File dir = new File (sdCard.getAbsolutePath() + strDir);
         dir.mkdirs();
         File file = new File(dir, strFileName);

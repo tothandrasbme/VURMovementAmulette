@@ -73,6 +73,7 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
     private static final int LINE_THICKNESS = 3;
     private static final boolean CYCLIC = true;
 
+
     private SocketServer sockServer;
 
     // I truncated the accelerometer outputs from 2^15 bits to 2^12 bits to allow for the
@@ -116,6 +117,7 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
     private Spinner _spAccRange;
     private TextView _tvFile;
     private EditText _etFileSamples;
+    private int sensorDirection; // 0 - external , 1 - internal
 
     private SensorManager sensorManager;
     private Sensor accelSensor;
@@ -165,6 +167,8 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
     int sentMessageNumber = 1;
     protected Handler myHandler;
     public static final String SEND_ACCELERATION_DATA_MESSAGE_PATH = "/acceleration_dataexploration";
+
+    public ChartRenderer classChartRenderer;
 
     //Define a nested class that extends BroadcastReceiver//
 
@@ -228,7 +232,7 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
 
         // Update dependent objects
         //Bluetooth.classChartRenderer.setChScale(fChScale);
-        sockServer.classChartRenderer.setChScale(fChScale);
+        classChartRenderer.setChScale(fChScale);
         // ToDo: Check Socketserver action here
 
     }
@@ -242,8 +246,8 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
 
         //float fIncrement = Bluetooth.classChartRenderer.classChart.classTraceHelper.getTraceIncrement();
         //float fStart = Bluetooth.classChartRenderer.classChart.classTraceHelper.getTraceStart();
-        float fIncrement = sockServer.classChartRenderer.classChart.classTraceHelper.getTraceIncrement();
-        float fStart = sockServer.classChartRenderer.classChart.classTraceHelper.getTraceStart();
+        float fIncrement = classChartRenderer.classChart.classTraceHelper.getTraceIncrement();
+        float fStart = classChartRenderer.classChart.classTraceHelper.getTraceStart();
 
         // Populate the array with the scale factors
         for( int idx = 0; idx< TRACE_COUNT; ++idx) {
@@ -253,7 +257,7 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
 
         // Update the dependent objects
         //Bluetooth.classChartRenderer.setChOffset(fChOffset);
-        sockServer.classChartRenderer.setChOffset(fChOffset);
+        classChartRenderer.setChOffset(fChOffset);
 
     }
 
@@ -311,8 +315,16 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
         // ToDo: Check Socketserver action here
         //Bluetooth.samplesBuffer=new SamplesBuffer[TRACE_COUNT];
         //Bluetooth.vSetWriteLocal(bWriteLocal);
-        sockServer.vSetWriteLocal(bWriteLocal);
+
         sockServer = new SocketServer();
+        sockServer.setWritelocalFlagsAtThreads(bWriteLocal);
+
+        classChartRenderer = new ChartRenderer(this,SCREEN_BUFFER_COUNT,sockServer.samplesBuffer, TRACE_COUNT);
+        classChartRenderer.setCyclic(CYCLIC);
+        classChartRenderer.bSetDivisionsX(I_DIVISIONS_X);
+        classChartRenderer.bSetDivisionsY(I_DIVISIONS_Y);
+
+        sockServer.setChartRendererClass(classChartRenderer);
 
 
         // Flags for the disconnet button
@@ -335,6 +347,10 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+
+        sensorManager.registerListener(mSensorListener,accelSensor,SensorManager.SENSOR_DELAY_NORMAL);
+
+        sensorDirection = 0; // 0 - external, 1 - internal
 
 
         // Flags for the data direction button
@@ -404,11 +420,6 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
         //Bluetooth.classChartRenderer.bSetDivisionsX(I_DIVISIONS_X);
         //Bluetooth.classChartRenderer.bSetDivisionsY(I_DIVISIONS_Y);
 
-        sockServer.classChartRenderer = new ChartRenderer(this,SCREEN_BUFFER_COUNT,sockServer.samplesBuffer, TRACE_COUNT);
-        sockServer.classChartRenderer.setCyclic(CYCLIC);
-        sockServer.classChartRenderer.bSetDivisionsX(I_DIVISIONS_X);
-        sockServer.classChartRenderer.bSetDivisionsY(I_DIVISIONS_Y);
-
         fChScale = new float[TRACE_COUNT];
         setChScale(F_SCALE_FACTOR_ACC);
 
@@ -417,14 +428,14 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
 
         // Line thickness
         //Bluetooth.classChartRenderer.setThickness(LINE_THICKNESS);
-        sockServer.classChartRenderer.setThickness(LINE_THICKNESS);
+        classChartRenderer.setThickness(LINE_THICKNESS);
 
         // Number of columns of chart data
         //Bluetooth.classChartRenderer.setChartColumnCount(CHART_COLUMN_COUNT);
-        sockServer.classChartRenderer.setChartColumnCount(CHART_COLUMN_COUNT);
+        classChartRenderer.setChartColumnCount(CHART_COLUMN_COUNT);
 
         //glChartSurfaceView.setRenderer(Bluetooth.classChartRenderer);
-        glChartSurfaceView.setRenderer(sockServer.classChartRenderer);
+        glChartSurfaceView.setRenderer(classChartRenderer);
 
         // Initialize the Bluetooth object
         init();
@@ -512,12 +523,23 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
 
         String[] accelDatas = messageContent.substring(1,messageContent.length()-2).split(",");
 
-        x_current_Acce_watch = (float)((float) (Float.parseFloat(accelDatas[0])) * 500 + 4000);
+        try {
+            x_current_Acce_watch = (float)((float) (Float.parseFloat(accelDatas[0])) * 1000 + 4000);
+        } catch (NumberFormatException nfe) {
+            Log.d("Main: ", "Cannot parse message from wearable (" + nfe.getMessage() + ")");
+        }
 
-        y_current_Acce_watch = (float)((float) (Float.parseFloat(accelDatas[1])) * 500 + 4000);
+        try {
+            y_current_Acce_watch = (float)((float) (Float.parseFloat(accelDatas[1])) * 1000 + 4000);
+        } catch (NumberFormatException nfe) {
+            Log.d("Main: ", "Cannot parse message from wearable (" + nfe.getMessage() + ")");
+        }
 
-        z_current_Acce_watch = (float)((float) (Float.parseFloat(accelDatas[2])) * 500 + 4000);
-
+        try {
+            z_current_Acce_watch = (float)((float) (Float.parseFloat(accelDatas[2])) * 1000 + 4000);
+        } catch (NumberFormatException nfe) {
+            Log.d("Main: ", "Cannot parse message from wearable (" + nfe.getMessage() + ")");
+        }
 
 
         /*dataPayload = "[" + Float.toString(event.values[0]) +
@@ -620,76 +642,76 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
 
         @Override
         public void onSensorChanged(SensorEvent event) {
-            Log.d("Main: ","Acceleration internal raw: " + event.values[0] + "   ,"  + event.values[1] + "   ,"  + event.values[2] + "Acceleration changes: " + deltaX + "   ,"  + deltaY + "   ,"  + deltaZ );
+            //Log.d("Main: ","Acceleration internal raw: " + event.values[0] + "   ,"  + event.values[1] + "   ,"  + event.values[2] + "Acceleration changes: " + deltaX + "   ,"  + deltaY + "   ,"  + deltaZ );
 
-            // get the change of the x,y,z values of the accelerometer
-            deltaX = Math.abs(lastX - event.values[0]);
-            deltaY = Math.abs(lastY - event.values[1]);
-            deltaZ = Math.abs(lastZ - event.values[2]);
-
-
-            // if the change is below 2, it is just plain noise
-            if (deltaX < 2)
-                deltaX = 0;
-            if (deltaY < 2)
-                deltaY = 0;
-            if (deltaZ < 2)
-                deltaZ = 0;
-
-            // set the last know values of x,y,z
-            lastX = event.values[0];
-            lastY = event.values[1];
-            lastZ = event.values[2];
-
-            fX_Acce_internal[idxBuff] = (float)((float) (event.values[0]) * 500 + 4000);
-
-            fY_Acce_internal[idxBuff] = (float)((float) (event.values[1]) * 500 + 4000);
-
-            fZ_Acce_internal[idxBuff] = (float)((float) (event.values[2]) * 500 + 4000);
-
-            fX_Acce_watch[idxBuff] = x_current_Acce_watch;
-
-            fY_Acce_watch[idxBuff] = y_current_Acce_watch;
-
-            fZ_Acce_watch[idxBuff] = z_current_Acce_watch;
+                // get the change of the x,y,z values of the accelerometer
+                deltaX = Math.abs(lastX - event.values[0]);
+                deltaY = Math.abs(lastY - event.values[1]);
+                deltaZ = Math.abs(lastZ - event.values[2]);
 
 
+                // if the change is below 2, it is just plain noise
+                if (deltaX < 2)
+                    deltaX = 0;
+                if (deltaY < 2)
+                    deltaY = 0;
+                if (deltaZ < 2)
+                    deltaZ = 0;
 
-            sockServer.classChartRenderer.classChart
-                    .addSample(fX_Acce_internal[idxBuff] - F_OFFSET_COUNT, 0);
-            sockServer.classChartRenderer.classChart
-                    .addSample(fY_Acce_internal[idxBuff] - F_OFFSET_COUNT, 1);
-            sockServer.classChartRenderer.classChart
-                    .addSample(fZ_Acce_internal[idxBuff] - F_OFFSET_COUNT, 2);
+                // set the last know values of x,y,z
+                lastX = event.values[0];
+                lastY = event.values[1];
+                lastZ = event.values[2];
 
-            sockServer.classChartRenderer.classChart
-                    .addSample(0.0f, 3);
-            sockServer.classChartRenderer.classChart
-                    .addSample(0.0f, 4);
-            sockServer.classChartRenderer.classChart
-                    .addSample(0.0f, 5);
+                fX_Acce_internal[idxBuff] = (float) ((float) (event.values[0]) * 500 + 4000);
 
-            sockServer.classChartRenderer.classChart
-                    .addSample(fX_Acce_watch[idxBuff], 6);
-            sockServer.classChartRenderer.classChart
-                    .addSample(fY_Acce_watch[idxBuff], 7);
-            sockServer.classChartRenderer.classChart
-                    .addSample(fZ_Acce_watch[idxBuff], 8);
+                fY_Acce_internal[idxBuff] = (float) ((float) (event.values[1]) * 500 + 4000);
 
-            Log.d("Main: ","Acceleration watch: " + fX_Acce_watch[idxBuff] + "   ,"  + fY_Acce_watch[idxBuff] + "   ,"  + fZ_Acce_watch[idxBuff]);
+                fZ_Acce_internal[idxBuff] = (float) ((float) (event.values[2]) * 500 + 4000);
+
+                fX_Acce_watch[idxBuff] = x_current_Acce_watch;
+
+                fY_Acce_watch[idxBuff] = y_current_Acce_watch;
+
+                fZ_Acce_watch[idxBuff] = z_current_Acce_watch;
+
+            if (sensorDirection == 1) { // 0 - external, 1- internal
+                classChartRenderer.classChart
+                        .addSample(fX_Acce_internal[idxBuff] - F_OFFSET_COUNT, 0);
+                classChartRenderer.classChart
+                        .addSample(fY_Acce_internal[idxBuff] - F_OFFSET_COUNT, 1);
+                classChartRenderer.classChart
+                        .addSample(fZ_Acce_internal[idxBuff] - F_OFFSET_COUNT, 2);
+
+                classChartRenderer.classChart
+                        .addSample(0.0f, 3);
+                classChartRenderer.classChart
+                        .addSample(0.0f, 4);
+                classChartRenderer.classChart
+                        .addSample(0.0f, 5);
+
+                classChartRenderer.classChart
+                        .addSample(fX_Acce_watch[idxBuff], 6);
+                classChartRenderer.classChart
+                        .addSample(fY_Acce_watch[idxBuff], 7);
+                classChartRenderer.classChart
+                        .addSample(fZ_Acce_watch[idxBuff], 8);
+            }
+
+                // Try to get the socket server for the data collector
+                if (sockServer != null && _tbStream.isChecked()) {
+                    Log.d("Main: ", "Send data to server: main and watch!");
+                    sockServer.sendToDataCollector("[DATA;INTERNAL;WATCH;" + fX_Acce_watch[idxBuff] + ";" + fY_Acce_watch[idxBuff] + ";" + fZ_Acce_watch[idxBuff] + "]");
+                    sockServer.sendToDataCollector("[DATA;INTERNAL;MAIN;" + fX_Acce_internal[idxBuff] + ";" + fY_Acce_internal[idxBuff] + ";" + fZ_Acce_internal[idxBuff] + "]");
+                } else {
+                    Log.d("Main: ", "Server is null!");
+                }
 
 
-            /*
-            sockServer.classChartRenderer.classChart
-                    .addSample(0.0f, 9);
-            sockServer.classChartRenderer.classChart
-                    .addSample(0.0f, 10);
-            sockServer.classChartRenderer.classChart
-                    .addSample(0.0f, 11);*/
 
-            // Increment the data buffer index
-            idxBuff = ++idxBuff % iFileSampleCount;
-        }
+                // Increment the data buffer index
+                idxBuff = ++idxBuff % iFileSampleCount;
+            }
 
         @Override
         public void onAccuracyChanged(Sensor sensor, int accuracy) {
@@ -742,8 +764,8 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
         //Bluetooth.vSetWriteLocal(bWriteLocal);
         //Bluetooth.vSetWritePending(true);
 
-        sockServer.vSetWriteLocal(bWriteLocal);
-        sockServer.vSetWritePending(true);
+        sockServer.setWritelocalFlagsAtThreads(bWriteLocal);
+        sockServer.setWritePendingAtThreads(true);
     }
 
     /**
@@ -962,7 +984,7 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
         // Update the scaling values
         int iOCRA = sharedPref.getInt("OCR0A", 249);
         //Bluetooth.vSetSampleFreq(dGetFreq(256, iOCRA));
-        sockServer.vSetSampleFreq(dGetFreq(256, iOCRA));
+        sockServer.setSampleFreqsAtThreads(dGetFreq(256, iOCRA));
         fAccelCountsPerG = (float)(2048.0f/pow(2.0f, (float)(1+sharedPref.getInt("ACCFS", 0))));
         dGPerDiv = (1.0f/F_SCALE_FACTOR_ACC)/(I_DIVISIONS_Y* fAccelCountsPerG);
 
@@ -983,7 +1005,7 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
 
         // Horizontal label goodness
         //fTimePerDiv = SCREEN_BUFFER_COUNT / ((float)Bluetooth.dGetSampleFrequency() * (float)I_DIVISIONS_X );
-        fTimePerDiv = SCREEN_BUFFER_COUNT / ((float)sockServer.dGetSampleFrequency() * (float)I_DIVISIONS_X );
+        fTimePerDiv = SCREEN_BUFFER_COUNT / ((float)sockServer.getSampleFreqsAtThreads() * (float)I_DIVISIONS_X );
         tvTrace[idxText].setText(String.format("%.1f sec. per div", fTimePerDiv));
 
     }
@@ -1022,29 +1044,12 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
                 }*/
 
                 // This section handles the thread
-                if (sockServer.serverThread != null)
+                if (sockServer.serverRunnableForThread != null)
                 {
-                    sockServer.bStreamData = _tbStream.isChecked();
+                    sockServer.serverRunnableForThread.setChannelsStreamingFlag(_tbStream.isChecked());
                 }
 
-                // This section handles the dependant buttons
-                if (_tbStream.isChecked()){
 
-                    _tbSaveData.setVisibility(View.VISIBLE);
-                    _tbSaveData.setEnabled(true);
-                    _tvDataStorage.setVisibility(View.VISIBLE);
-
-                    //vUpdateChMapsEnabled(true);
-
-                    //_tbAudioOut.setVisibility(View.VISIBLE);
-                    //_tbAudioOut.setEnabled(true);
-                    //_tvAudioOut.setVisibility(View.VISIBLE);
-
-                    vUpdateGridLabels();
-
-                }else{
-                    vStopStreamDep();
-                }
             }
 
         });
@@ -1061,7 +1066,7 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
                 // Update user prefs for samples to save
                 vUpdateUserPrefs();
                 //Bluetooth.vSetFileSamples(sharedPref.getInt("SAMPSAVE",15000));
-                sockServer.vSetFileSamples(sharedPref.getInt("SAMPSAVE",15000));
+                sockServer.getServerRunnableForChannels().vSetFileSamples(sharedPref.getInt("SAMPSAVE",15000));
 
                 //startActivity(new Intent("android.intent.action.BT1"));
 
@@ -1085,7 +1090,7 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
             @Override
             public void onClick(View v) {
                 _tbStream.setChecked(false);
-                sockServer.bStreamData = false;
+                sockServer.serverRunnableForThread.setChannelsStreamingFlag(false);
                 btnConnectButton.setVisibility(View.VISIBLE);
                 btnConnectButton.setEnabled(true);
                 _bDisconnect.setVisibility(View.INVISIBLE);
@@ -1114,15 +1119,21 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
             @Override
             public void onClick(View v) {
                 if(_tbDirectionData.isChecked()) {      // Internal Sensor
+                    sensorDirection = 1; // 0 - external, 1 - internal
+                    sockServer.getServerRunnableForChannels().setSensorDirectionAtChannels(sensorDirection); // 0 external, 1 internal
                     Toast.makeText(getApplicationContext(), "Internal sensor start reading",Toast.LENGTH_SHORT);
 
-                    sensorManager.registerListener(mSensorListener,accelSensor,SensorManager.SENSOR_DELAY_NORMAL);
+                    //sensorManager.registerListener(mSensorListener,accelSensor,SensorManager.SENSOR_DELAY_NORMAL);
+
 
                     Log.d("Main:","Internal sensor will be used now.");
                     List<Sensor> deviceSensors = sensorManager.getSensorList(Sensor.TYPE_ALL);
                     Log.d("Main:","Sensors: " + deviceSensors.toString());
                 } else {
-                    sensorManager.unregisterListener(mSensorListener);
+                    sensorDirection = 0; // 0 - external, 1 - internal
+                    sockServer.getServerRunnableForChannels().setSensorDirectionAtChannels(sensorDirection); // 0 external, 1 internal
+
+                    //sensorManager.unregisterListener(mSensorListener);
                 }
             }
         });
