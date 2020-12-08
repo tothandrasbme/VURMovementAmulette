@@ -6,9 +6,11 @@ package com.dairyroadsolutions.accelplot;
  * This helper provides methods to write data to the sd card on the device.
  */
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -42,23 +44,110 @@ class FileHelper {
     }
 
 
+    public void clearFileHelper(){
+        this.logFile = null;
+        this.logDir = null;
+    }
+
+    public String getFilesInDirectory(){
+        String strDir = "/Amulette_Log";
+        logDir = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + strDir);
+        if(!logDir.exists()) {
+            Log.d("Main: ", "LOG: Try to get content of the directory, but there is no library");
+            return "";
+        }
+        else {
+            File[] filesInTheDirectory = logDir.listFiles();
+            Log.d("Main: ","Files list: Size - " + filesInTheDirectory.length);
+            if(filesInTheDirectory.length == 0){
+                Log.d("Main: ","No files in the directory!!!");
+                return "";
+            } else {
+                String result = "[DATA;RFD";
+                for (int i = 0; i < filesInTheDirectory.length; i++) {
+                    result += ";" + filesInTheDirectory[i].getName();
+                    Log.d("Main: ", "FileName: " + filesInTheDirectory[i].getName());
+
+                }
+                return result;
+            }
+        }
+    }
+
+    public String readLogFileContent(String sourceFile){
+        String resultFileContent = "[DATA;RFC;";
+        String strDir = "/Amulette_Log";
+        File readDir = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + strDir);
+        if(readDir.exists()) {
+            File readSource = new File(readDir, sourceFile);
+            if (readSource != null) {
+                try {
+                    //String currentDateTimeString = DateFormat.getDateTimeInstance().format(new Date());
+                    StringBuilder buildResult = new StringBuilder();
+
+                    BufferedReader buf = new BufferedReader(new FileReader(readSource));
+                    String line;
+                    while((line = buf.readLine()) != null){
+                        buildResult.append(line+"#");
+                        //buildResult.append("\n");
+                    }
+                    buf.close();
+                    resultFileContent += buildResult.toString();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                } finally {
+                    resultFileContent += ",OK]";
+                }
+
+                return resultFileContent;
+            } else {
+                Log.d("Main: ", "LOG: Log file is null we are not able to open it");
+                return "";
+            }
+        }
+        return "";
+    }
+
     public boolean logAccData(String source, float data1, float data2, float data3){
 
-        String strDir = "Amulette_Log";
+
 
         if(logFile == null) {
+
+
+            String strDir = "/Amulette_Log";
+
             File sdCard;
 
             String currentDateTimeString = DateFormat.getDateTimeInstance().format(new Date());
 
-            if(Build.VERSION.SDK_INT > Build.VERSION_CODES.JELLY_BEAN_MR2){
-                sdCard = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
-            }else{
-                sdCard = Environment.getExternalStorageDirectory();
+
+            logDir = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + strDir);
+
+            // If the directory is missing then create it
+            if(!logDir.exists()) {
+                Log.d("Main: ", "LOG: Create directory");
+                if(logDir.mkdir()){
+                    Log.d("Main: ", "LOG: Check file");
+
+
+                }
             }
 
-            logDir = new File(sdCard.getAbsolutePath() + strDir);
-            logFile = new File(logDir, currentDateTimeString + "log.txt");
+            String Logfilename = System.currentTimeMillis() + "_log.txt";
+
+            logFile = new File(logDir, Logfilename);
+
+            // If the file is missing then create it
+            if(!logFile.exists()) {
+                try {
+                    Log.d("Main: ", "LOG: Create file");
+                    logFile.createNewFile();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
         }
 
         appenLogToSD(source,data1,data2,data3);
@@ -73,10 +162,9 @@ class FileHelper {
     public boolean appenLogToSD(String source, float data1, float data2, float data3){
 
         if(logFile != null) {
-
-
             try {
-                String currentDateTimeString = DateFormat.getDateTimeInstance().format(new Date());
+                //String currentDateTimeString = DateFormat.getDateTimeInstance().format(new Date());
+                String currentDateTimeString = System.currentTimeMillis() + "";
 
                 BufferedWriter buf = new BufferedWriter(new FileWriter(logFile, true));
                 buf.append(currentDateTimeString + "-" + "[DATA1;"+ source + ";" + data1 + ";" + data2 + ";" + data3 + "]");
@@ -88,7 +176,7 @@ class FileHelper {
 
             return true;
         } else {
-            Log.d("Main: ", "Log file is null we are not able to open it");
+            Log.d("Main: ", "LOG: Log file is null we are not able to open it");
             return false;
         }
     }

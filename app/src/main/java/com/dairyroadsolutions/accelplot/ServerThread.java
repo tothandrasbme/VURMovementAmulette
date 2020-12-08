@@ -16,6 +16,7 @@ class ServerThread implements Runnable {
     private ArrayList<CommunicationThread> commThreadList = new ArrayList<>();
     private ServerSocket serverSocket;
     private ChartRenderer classChartRendererFromParent = null;
+    private FileHelper currentFileHelper = null;
 
     public void run() {
         Log.d("Active","Start Thread");
@@ -35,6 +36,9 @@ class ServerThread implements Runnable {
                 socket = serverSocket.accept();
 
                 commThread = new CommunicationThread(socket,classChartRendererFromParent,this);
+                if(currentFileHelper != null) {
+                    commThread.setFileHelper(currentFileHelper);
+                }
                 commThread.running = true;
                 new Thread(commThread).start();
                 commThreadList.add(commThread); // Save the current connection
@@ -89,6 +93,13 @@ class ServerThread implements Runnable {
     public void setSensorDirectionAtChannels(int directionFlag) { // 0 external, 1 internal
         for (CommunicationThread currentChannel : commThreadList) {
             currentChannel.vSetDirection(directionFlag);
+        }
+    }
+
+    public void setFileHelperAtChannels(FileHelper fHelper) { // 0 external, 1 internal
+        currentFileHelper = fHelper;
+        for (CommunicationThread currentChannel : commThreadList) {
+            currentChannel.setFileHelper(fHelper);
         }
     }
 

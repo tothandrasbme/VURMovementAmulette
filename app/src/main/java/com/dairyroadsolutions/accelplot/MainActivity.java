@@ -73,6 +73,8 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
     private static final int LINE_THICKNESS = 3;
     private static final boolean CYCLIC = true;
 
+    public FileHelper fhelper = null;
+
 
     private SocketServer sockServer;
 
@@ -324,7 +326,10 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
         classChartRenderer.bSetDivisionsX(I_DIVISIONS_X);
         classChartRenderer.bSetDivisionsY(I_DIVISIONS_Y);
 
+        fhelper = new FileHelper(0);
+
         sockServer.setChartRendererClass(classChartRenderer);
+        sockServer.getServerRunnableForChannels().setFileHelperAtChannels(fhelper);
 
 
         // Flags for the disconnet button
@@ -700,12 +705,20 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
 
                 // Try to get the socket server for the data collector
                 if (sockServer != null && _tbStream.isChecked()) {
-                    Log.d("Main: ", "Send data to server: main and watch!");
-                    sockServer.sendToDataCollector("[DATA;INTERNAL;WATCH;" + fX_Acce_watch[idxBuff] + ";" + fY_Acce_watch[idxBuff] + ";" + fZ_Acce_watch[idxBuff] + "]");
+                    //Log.d("Main: ", "Send data to server: main and watch!");
+                    sockServer.sendToDataCollector("[DATA;INTERNAL;WATCH;" + fX_Acce_watch[idxBuff] + ";" + fX_Acce_watch[idxBuff] + ";" + fX_Acce_watch[idxBuff] + "]");
                     sockServer.sendToDataCollector("[DATA;INTERNAL;MAIN;" + fX_Acce_internal[idxBuff] + ";" + fY_Acce_internal[idxBuff] + ";" + fZ_Acce_internal[idxBuff] + "]");
-                } else {
+                } /*else {
                     Log.d("Main: ", "Server is null!");
-                }
+                }*/
+
+            // Save the data off to the sd card / local directory
+            if (bWriteLocal) {
+                Log.d("Main: ",
+                        "Write Out data");
+                fhelper.logAccData("INTERNAL_MAIN",fX_Acce_internal[idxBuff],fY_Acce_internal[idxBuff],fZ_Acce_internal[idxBuff]);
+                fhelper.logAccData("INTERNAL_WATCH",fX_Acce_watch[idxBuff],fY_Acce_watch[idxBuff],fZ_Acce_watch[idxBuff]);
+            }
 
 
 
@@ -745,14 +758,14 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
         _tbSaveData.setEnabled(false);
         _tbSaveData.setVisibility(View.GONE);
         _tvDataStorage.setVisibility(View.GONE);
-        vUpdateSaveData();
+
 
         vUpdateChMapsEnabled(false);
         _tbAudioOut.setChecked(false);
         _tbAudioOut.setEnabled(false);
         _tbAudioOut.setVisibility(View.GONE);
         _tvAudioOut.setVisibility(View.GONE);
-        vUpdateAudioOut();
+
 
     }
 
@@ -760,9 +773,11 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
      * Handles process that should be affected by change in the SaveData button status
      */
     private void vUpdateSaveData(){
-        bWriteLocal = _tbStream.isChecked();
-        //Bluetooth.vSetWriteLocal(bWriteLocal);
-        //Bluetooth.vSetWritePending(true);
+        bWriteLocal = _tbSaveData.isChecked();
+
+        if(!bWriteLocal) {
+            fhelper.clearFileHelper();
+        }
 
         sockServer.setWritelocalFlagsAtThreads(bWriteLocal);
         sockServer.setWritePendingAtThreads(true);
@@ -1107,9 +1122,9 @@ public class MainActivity extends Activity implements DataClient.OnDataChangedLi
         _tbSaveData.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                /// TEST // vUpdateSaveData();
-                new SendMessage().start();
-                Log.d("Main: ", "Send to Wearable - TEST Message ");
+                vUpdateSaveData();
+                /*new SendMessage().start();
+                Log.d("Main: ", "Send to Wearable - TEST Message ");*/
             }
         });
 

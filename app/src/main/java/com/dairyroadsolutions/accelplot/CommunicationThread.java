@@ -14,6 +14,7 @@ class CommunicationThread implements Runnable {
     public static boolean bStreamData = false;
     public static int bDirectionFlag = 0; // 0 external, 1 internal
     private ServerThread mainSocketServerThreadForChannels = null;
+    private static FileHelper commonFileHelper = null;
 
     public ChartRenderer classChartRendererFromParent;
 
@@ -55,7 +56,7 @@ class CommunicationThread implements Runnable {
 
     public static int idxBuff = 0;
 
-    public static final FileHelper fhelper = new FileHelper(iFileSampleCount);
+
     private static boolean bWriteLocal = true;
     private static boolean bWritePending = true;
 
@@ -117,6 +118,24 @@ class CommunicationThread implements Runnable {
                                 this.connectionType = 1;
                                 Log.d("Main: ", "This is a Data Collector - " + clientSocket.getRemoteSocketAddress());
                                 sendMessageOnSocket("Welcome on board ( " + clientSocket.getRemoteSocketAddress() + ")\r\n");
+                            } else if(readParts.length > 1 && readParts[1].contains("RFD")){
+                                this.connectionType = 1;
+                                Log.d("Main: ", "This is a Data Collector and want to read files - " + clientSocket.getRemoteSocketAddress());
+                                sendMessageOnSocket("File list is coming ( " + clientSocket.getRemoteSocketAddress() + ")\r\n");
+                                String filesStringToSend = commonFileHelper.getFilesInDirectory();
+                                sendMessageOnSocket(filesStringToSend);
+                                Log.d("Main: ", "Files message : " + filesStringToSend);
+                            } else if(readParts.length > 1 && readParts[1].contains("RFC")){
+                                this.connectionType = 1;
+                                if(readParts.length > 2) {
+                                    Log.d("Main: ", "This is a Data Collector and want to read file Content (" + readParts[2].substring(0,readParts[2].length()-1) +") - " + clientSocket.getRemoteSocketAddress());
+                                    sendMessageOnSocket("File list is coming ( " + clientSocket.getRemoteSocketAddress() + ")\r\n");
+                                    // Prepare content to send
+                                    String filesContent = commonFileHelper.readLogFileContent(readParts[2].substring(0,readParts[2].length()-1));
+                                    sendMessageOnSocket(filesContent);
+                                    //sendMessageOnSocket("[CMD;CFC;OK]");
+                                    Log.d("Main: ", "File content message : " + filesContent);
+                                }
                             }
                         }else if(this.connectionType == 0 && isDataMessage) {
                             if (readParts.length == 27) {
@@ -182,14 +201,14 @@ class CommunicationThread implements Runnable {
                                 preprocY_Gyro2 = Double.parseDouble(readParts[25]);
                                 preprocZ_Gyro2 = Double.parseDouble(readParts[26]);
 
-                                Log.d("Active",
+                                /*Log.d("Active",
                                         "Parsed message from Accelerometer 1: --- Ax-" + iX_Accel + " Ay-" + iY_Accel + " Az-" + iZ_Accel + " Gx-" + iX_Gyro + " Gy-" + iY_Gyro + " Gz-"
                                                 + iZ_Gyro + " Pax-" + preprocX_Accel + " Pay-" + preprocY_Accel
                                                 + " Paz-" + preprocZ_Accel + " Pgx-" + preprocX_Gyro + " Pgx-" + preprocY_Gyro + " Pgx-"
                                                 + preprocZ_Gyro + "\r\n" + "From Accelerometer 2: --- Ax-" + iX_Accel2 + " Ay-" + iY_Accel2 + " Az-" + iZ_Accel2 + " Gx-" + iX_Gyro2 + " Gy-" + iY_Gyro2 + " Gz-"
                                                 + iZ_Gyro2 + " Pax-" + preprocX_Accel2 + " Pay-" + preprocY_Accel2
                                                 + " Paz-" + preprocZ_Accel2 + " Pgx-" + preprocX_Gyro2 + " Pgx-" + preprocY_Gyro2 + " Pgx-"
-                                                + preprocZ_Gyro2 + "\r\n");
+                                                + preprocZ_Gyro2 + "\r\n");*/
 
                                // Parse through the bytes and validate
 
@@ -265,17 +284,9 @@ class CommunicationThread implements Runnable {
 
 
                                         // Save the data off to the sd card / local directory
-                                        if (bWriteLocal) {
-                                            if (idxBuff == (iFileSampleCount - 1)
-                                                    && bWritePending) {
-                                                Log.d("Active",
-                                                        "Write Out data");
-
-												fhelper.logAccData("External1",fX_Accel[idxBuff],fY_Accel[idxBuff],fZ_Accel[idxBuff]);
-												fhelper.logAccData("External2",fX_Accel2[idxBuff],fY_Accel2[idxBuff],fZ_Accel2[idxBuff]);
-
-
-                                            }
+                                        if (bWriteLocal && commonFileHelper != null) {
+                                           commonFileHelper.logAccData("EXTERNAL1",fX_Accel[idxBuff],fY_Accel[idxBuff],fZ_Accel[idxBuff]);
+                                           commonFileHelper.logAccData("EXTERNAL2",fX_Accel2[idxBuff],fY_Accel2[idxBuff],fZ_Accel2[idxBuff]);
                                         }
 
                                         // Increment the data buffer index
@@ -331,7 +342,6 @@ class CommunicationThread implements Runnable {
         fY_Gyro = new float[iFileSampleCount];
         fZ_Gyro = new float[iFileSampleCount];
         idxBuff=0;
-        fhelper.vSetSamples(iSamples);
     }
 
     public static void vSetWriteLocal (boolean bNewFlag){
@@ -344,6 +354,10 @@ class CommunicationThread implements Runnable {
 
     public static void vSetDirection (int directionFlag){ // 0 extrenal, 1 internal
         bDirectionFlag = directionFlag;
+    }
+
+    public static void setFileHelper(FileHelper fHelper) {
+        commonFileHelper = fHelper;
     }
 
     public void cancel() {
